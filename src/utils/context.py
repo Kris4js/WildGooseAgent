@@ -69,7 +69,7 @@ class ToolContextManager:
         hash_obj = hashlib.md5(query.encode("utf-8"))
         return hash_obj.hexdigest()[:12]
 
-    def _generate_file_name(
+    def _generate_filename(
         self, tool_name: str, args: dict[str, Any]
     ) -> str:
         """根据工具名称和参数生成唯一的文件名"""
@@ -116,7 +116,7 @@ class ToolContextManager:
         query_id: Optional[str] = None,
     ) -> str:
         """将工具执行的上下文数据保存到磁盘"""
-        filename = self._generate_file_name(tool_name, args)
+        filename = self._generate_filename(tool_name, args)
         filepath = os.path.join(self.context_dir, filename)
 
         tool_description = self.get_tool_description(tool_name, args)
@@ -137,7 +137,7 @@ class ToolContextManager:
                 # Result is not JSON, use as-is
                 pass
 
-        context_data = ContextData(
+        context_data: ContextData = ContextData(
             tool_name=tool_name,
             args=args,
             tool_description=tool_description,
@@ -150,7 +150,9 @@ class ToolContextManager:
 
         # Write context data to JSON file
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(asdict(context_data), f, ensure_ascii=False, indent=2)
+            json.dump(
+                asdict(context_data), f, ensure_ascii=False, indent=2
+            )
 
         context_pointer: ContextPointer = ContextPointer(
             filepath=filepath,
@@ -168,53 +170,62 @@ class ToolContextManager:
 
         return filepath
 
+    def save_and_get_summary(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        result: Any,
+        query_id: str,
+    ) -> str:
+        """保存上下文并返回简要摘要字符串"""
+        filepath = self.save_context(tool_name, args, result, None, query_id)
+        return f"Tool: {tool_name}, Args: {json.dumps(args)}, Result saved at: {filepath}"
 
-if __name__ == "__main__":
 
-    flag = '3'
-
+def example_usage_tool_context_manager():
+    """ToolContextManager 示例用法"""
     manager = ToolContextManager()
 
-    if flag == '1':
+    # 参数/查询 哈希处理示例
+    args = {"param1": "value1", "param2": 42}
+    print("Args Hash:", manager._hash_args(args))
+    query = "What is the capital of France?"
+    print("Query Hash:", manager.hash_query(query))
 
-        # 参数/查询 哈希处理示例
-        args = {"param1": "value1", "param2": 42}
-        print("Args Hash:", manager._hash_args(args))
-        query = "What is the capital of France?"
-        print("Query Hash:", manager.hash_query(query))
+    # 生成文件名称示例
+    file_name = manager._generate_filename("web_search", args)
+    print("Generated File Name:", file_name)
+    tool_description = manager.get_tool_description(
+        "web_search",
+        {
+            "query": query,
+            "start_date": "2023-01-01",
+            "end_date": "2023-12-31",
+            "param1": "value1",
+        },
+    )
+    print("Tool Description:", tool_description)
 
-    elif flag == '2':
-        # 生成文件名称示例
-        file_name = manager._generate_file_name("web_search", args)
-        print("Generated File Name:", file_name)
-        tool_description = manager.get_tool_description(
-            "web_search",
-            {
-                "query": query,
-                "start_date": "2023-01-01",
-                "end_date": "2023-12-31",
-                "param1": "value1",
-            },
-        )
-        print("Tool Description:", tool_description)
+    # 保存上下文示例
+    filepath = manager.save_context(
+        tool_name="web_search",
+        args={
+            "query": "What is the capital of France?",
+            "start_date": "2023-01-01",
+            "end_date": "2023-12-31",
+        },
+        result={
+            "data": "The capital of France is Paris.",
+            "source_urls": [
+                "https://en.wikipedia.org/wiki/Paris",
+                "https://www.britannica.com/place/Paris",
+            ],
+        },
+        task_id=1,
+        query_id="query_123",
+    )
+    print("Context saved at:", filepath)
 
-    elif flag == '3':
-        # 保存上下文示例
-        filepath = manager.save_context(
-            tool_name="web_search",
-            args={
-                "query": "What is the capital of France?",
-                "start_date": "2023-01-01",
-                "end_date": "2023-12-31",
-            },
-            result={
-                "data": "The capital of France is Paris.",
-                "source_urls": [
-                    "https://en.wikipedia.org/wiki/Paris",
-                    "https://www.britannica.com/place/Paris",
-                ],
-            },
-            task_id=1,
-            query_id="query_123",
-        )
-        print("Context saved at:", filepath)
+
+if __name__ == "__main__":
+    example_usage_tool_context_manager()
