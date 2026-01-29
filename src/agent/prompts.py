@@ -391,69 +391,67 @@ Evaluate whether the gathered information is sufficient to answer the query.
 # Answer Phase Prompt
 # ======================================================================
 
-ANSWER_SYSTEM_PROMPT = f"""You are the answer component of a marketing agent.
+FINAL_ANSWER_SYSTEM_PROMPT = """You are the answer generation component of a marketing agent.
 
-Current date: {get_current_time()}
+Your job is to synthesize the completed tasks into a comprehensive answer.
 
-Your job is to synthesize all gathered information into a comprehensive, well-structured answer to the user's query.
+Current date: {current_date}
 
-You will be given:
-1. The user's original query
-2. All completed planning iterations
-3. All task results from tool executions and reasoning tasks
+## Guidelines
 
-Your task:
-- Synthesize information from all sources into a coherent answer
-- Structure your response clearly with appropriate sections
-- Highlight key findings and insights
-- Support your answer with specific data from the task results
-- Make the answer actionable and practical
+1. DIRECTLY answer the user's question
+2. Lead with the KEY FINDING in the first sentence
+3. Include SPECIFIC NUMBERS with context
+4. Use clear STRUCTURE - separate key data points
+5. Provide brief ANALYSIS when relevant
 
-Guidelines:
-- Be comprehensive but concise
-- Use clear headings and bullet points when appropriate
-- Reference specific data points and findings
-- Provide actionable recommendations when relevant
-- Ensure the answer directly addresses the user's question
-- If there are limitations in the data, acknowledge them
+## Format
+
+- Use plain text ONLY - NO markdown (no **, *, _, #, etc.)
+- Use line breaks and indentation for structure
+- Present key numbers on separate lines
+- Keep sentences clear and direct
+
+## Sources Section (REQUIRED when data was used)
+
+At the END, include a "Sources:" section listing data sources used.
+Format: "number. (brief description): URL"
+
+Example:
+Sources:
+1. (sales data): https://api.example.com/...
+2. (inventory data): https://api.example.com/...
+
+Only include sources whose data you actually referenced.
 """
 
 
-def get_answer_system_prompt() -> str:
+def get_final_answer_system_prompt() -> str:
     """Return system prompt of answer phase."""
-    return ANSWER_SYSTEM_PROMPT
+    return FINAL_ANSWER_SYSTEM_PROMPT.replace("{current_date}", get_current_time())
 
 
-def build_answer_user_prompt(
+def build_final_answer_user_prompt(
     query: str,
-    completedPlans: list,
-    taskResults: dict,
+    task_outputs: str,
+    sources: str = "",
 ) -> str:
-    """Build user prompt for answer phase."""
-    # Format completed plans
-    plans_summary = []
-    for idx, plan in enumerate(completedPlans, start=1):
-        pass_summary = [f"Planning Pass {idx}:"]
-        for task in plan.tasks:
-            status_symbol = "✓" if task.status.value == "completed" else "✗"
-            pass_summary.append(f"  {status_symbol} {task.description} [{task.id}]")
-        plans_summary.append("\n".join(pass_summary))
-    plans_str = "\n\n".join(plans_summary) if plans_summary else "No completed plans"
+    """Build user prompt for answer phase.
 
-    # Format task results
-    results_summary = []
-    for task_id, result in taskResults.items():
-        results_summary.append(f"Task {task_id}:\n{result.output}")
-    results_str = "\n\n".join(results_summary) if results_summary else "No task results"
+    Args:
+        query: The original user query
+        task_outputs: Formatted string of all task outputs
+        sources_str: Formatted string of available sources
 
-    return f"""Original Query:
-{query}
+    Returns:
+        str: The user prompt for final answer generation
+    """
+    sources_section = f"Available sources:\n{sources}\n\n" if sources else ""
 
-Completed Planning Iterations:
-{plans_str}
+    return f"""Original query: "{query}"
 
-All Task Results:
-{results_str}
+Completed task outputs:
+{task_outputs}
 
-Based on all the information gathered above, provide a comprehensive answer to the user's query.
+{sources_section}Synthesize a comprehensive answer to the user's query.
 """
