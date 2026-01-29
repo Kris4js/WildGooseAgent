@@ -40,15 +40,17 @@ async def llm_call(
     prompt: str,
     system_prompt: Optional[str] = None,
     model: str = DEFAULT_MODEL,
-    tools: Optional[list[str]] = None,
-) -> str:
+    tools: Optional[list] = None,
+) -> AIMessage | str:
     """
     Makes a call to the chat LLM with the given prompt.
     Args:
         prompt (str): 用户发送给 LLM 的提示。
         system_prompt (str): 可选的系统提示，用于指导 LLM 的行为。
+        tools (Optional[list]): 可选的工具列表，用于工具调用。
     Returns:
-        str: LLM 的响应文本。
+        AIMessage | str: 当 tools 存在时返回完整的 AIMessage 对象（包含 tool_calls），
+                         否则仅返回响应文本内容。
     """
     llm = _get_chat_llm(model=model)
 
@@ -68,6 +70,9 @@ async def llm_call(
     # 4. 调用 LLM
     response: AIMessage = await llm.ainvoke(messages)
 
+    # 5. 返回完整消息（如果需要提取 tool_calls）或仅内容
+    if tools is not None:
+        return response
     return response.content
 
 

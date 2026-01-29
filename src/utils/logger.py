@@ -63,7 +63,7 @@ class LoggerManager:
         """Configure logger for development (console output)."""
         logger.add(
             sys.stderr,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[name]}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <magenta>[{extra[name]}]</magenta> <cyan>{file.name}:{line}</cyan>: <level>{message}</level>",
             level=self.log_level,
             colorize=True,
             backtrace=True,
@@ -78,7 +78,7 @@ class LoggerManager:
         # General log file
         logger.add(
             self.log_dir / "app_{time:YYYY-MM-DD}.log",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[name]}:{function}:{line} - {message}",
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[name]}:{function}:{line}: {message}",
             level=self.log_level,
             rotation=self.log_rotation,
             retention=self.log_retention,
@@ -90,7 +90,7 @@ class LoggerManager:
         # Error log file (separate file for errors)
         logger.add(
             self.log_dir / "error_{time:YYYY-MM-DD}.log",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[name]}:{function}:{line} - {message}",
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[name]}:{function}:{line}: {message}",
             level="ERROR",
             rotation=self.log_rotation,
             retention=self.log_retention,

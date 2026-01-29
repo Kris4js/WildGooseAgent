@@ -145,9 +145,11 @@ class ToolContextManager:
             try:
                 # JSON.parser
                 parsed = json.loads(result)
-                if parsed.get("source_urls") is not None:
-                    source_urls = parsed.get("sourceUrls")
-                    actual_result = parsed["data"]
+                # Only proceed if parsed result is a dict (JSON object)
+                if isinstance(parsed, dict):
+                    if parsed.get("source_urls") is not None:
+                        source_urls = parsed.get("sourceUrls")
+                        actual_result = parsed["data"]
 
             except (json.JSONDecodeError, ValueError):
                 # Result is not JSON, use as-is

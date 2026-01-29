@@ -1,6 +1,6 @@
 import pytest
 
-from src.tools.tool_executor import ToolExecutor, ToolExecutionError
+from src.agent.tool_executor import ToolExecutor, ToolExecutionError
 
 
 class TestToolExecutor:
