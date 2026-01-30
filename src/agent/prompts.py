@@ -1,10 +1,21 @@
 from datetime import datetime
 from typing import Optional
+from configparser import ConfigParser
+
+_config = ConfigParser()
+_config.read("src/agent/config.ini")
+
 
 # ======================================================================
 # Helper Time Function
 # ======================================================================
+def get_agent_name() -> str:
+    """Get the agent name from config.
 
+    Returns:
+        str: The agent name
+    """
+    return _config.get("agent", "name", fallback="WildGooseReturn")
 
 def get_current_time() -> str:
     """Returns the current data formatted for prompts.
@@ -19,14 +30,13 @@ def get_current_time() -> str:
 # Default System Prompts (fallback for LLM calls)
 # ======================================================================
 
-DEFAULT_SYSTEM_PROMPT = """You are marketing agent.
-
+DEFAULT_SYSTEM_PROMPT = f"""You are {get_agent_name()} agent.
+Your primary objective is to assist users by answering their marketing-related queries using available data and tools.
 You are equipped with a set of powerful tools to gather and analyze data.
 You should be methodical, breaking down complex questions into manageable steps and using your tools strategically to find the answers.
 Always aim to provide accurate, comprehensive, and well-structured infomation to the user.
-
-
 """
+
 
 # ======================================================================
 # Context Selection Prompts (used by utils)
@@ -57,7 +67,6 @@ Return format:
 # Message History Prompts (used by utils)
 # ======================================================================
 
-# FIXME fix the entities description and other $...$ parts
 MESSAGE_SUMMARY_SYSTEM_PROMPT = """You are a summarization component of marketing agent.
 Your job is to create a brief, informative summary of an answer that was given to a user query.
 
@@ -102,29 +111,45 @@ Return format:
 # Understand Phase Prompt
 # ======================================================================
 
-# TODO fix the entities description and other $...$ parts
-UNDERSTAND_SYSTEM_PROMPT = f""" You are the understanding component of a marketing agent.
+UNDERSTAND_SYSTEM_PROMPT = f"""You are the understanding component of a marketing agent.
 
 Your job is to analyze the user's query and extract:
 1. The user's intent - what they want to accomplish.
-2. Key entities - $...$
+2. Key entities - important information mentioned in the query.
 
 Current date: {get_current_time()}
 
 Guidelines:
 - Be precise about what the user is asking for
-- Indentify ALL relevant entities ($...$)
-- $...$
+- Identify ALL relevant entities in the query
+- For each entity, determine its type and extract its value
 
-Return a JSON object with:
+Return a JSON object with this exact structure:
 - intent: A clear statement of what the user wants.
-- entities: Array of extracted entities with types, values, and normalized form.
+- entities: Array of entity objects.
+
+Each entity object must have these fields:
+- type: Must be one of: "action", "skill_name", or "tool_name" (lowercase with underscores)
+- value: The raw text extracted from the query
+
+Example:
+{{
+  "intent": "Execute a greeting skill to say hello to the user",
+  "entities": [
+    {{
+      "type": "action",
+      "value": "Say hello"
+    }},
+    {{
+      "type": "skill_name",
+      "value": "hello skill"
+    }}
+  ]
+}}
 """
 
 
-def build_understand_user_prompt(
-    query: str, conversation_context: Optional[str]
-) -> str:
+def build_understand_user_prompt(query: str, conversation_context: Optional[str]) -> str:
     """"""
     context_section = (
         f"""Previous conversation (for context):
@@ -147,6 +172,7 @@ Extract the intent and entities from this query.
 def get_understand_system_prompt() -> str:
     """Return system prompt of understand phase."""
     return UNDERSTAND_SYSTEM_PROMPT
+
 
 # ======================================================================
 # Plan Phase Prompt
@@ -175,10 +201,36 @@ Keep descriptions concise. Set dependsOn when a task needs results from another 
 
 ## Output
 
-Return JSON with:
+Return JSON with this exact structure:
 - summary: What you're going to do (or "Direct answer" if no tasks needed).
-- tasks: Array of tasks, or empty array if none needed.
+- tasks: Array of task objects, or empty array if none needed.
+
+Each task object must have these fields:
+- id: Unique identifier (e.g., "task_1", "task_2")
+- description: What this task should accomplish
+- taskType: Either "use_tools" or "reason"
+- dependsOn: Array of task IDs this depends on (e.g., ["task_1"]) or empty array []
+
+Example:
+{{
+  "summary": "Fetch sales data and analyze trends",
+  "tasks": [
+    {{
+      "id": "task_1",
+      "description": "Fetch sales data for product A",
+      "taskType": "use_tools",
+      "dependsOn": []
+    }},
+    {{
+      "id": "task_2",
+      "description": "Analyze sales trends from the data",
+      "taskType": "reason",
+      "dependsOn": ["task_1"]
+    }}
+  ]
+}}
 """
+
 
 def get_plan_system_prompt() -> str:
     """Return system prompt of plan phase."""
@@ -187,30 +239,48 @@ def get_plan_system_prompt() -> str:
 
 def build_plan_user_prompt(
     query: str,
-    understanding: object,
-    guidanceFromReflection: Optional[str] = None,
-    format_prior_work: str = "",
+    intent: str,
+    entities: str,
+    prior_work_summary: Optional[str] = None,
+    guidance: Optional[str] = None,
 ) -> str:
-    """Build user prompt for plan phase."""
-    guidance_section = (
-        f"\nGuidance from reflection:\n{guidanceFromReflection}\n"
-        if guidanceFromReflection
-        else ""
-    )
-    prior_work_section = (
-        f"\nPrevious work:\n{format_prior_work}\n" if format_prior_work else ""
-    )
+    """Build user prompt for plan phase.
 
-    return f"""Query:
-{query}
+    Args:
+        query: The user's query
+        intent: The understood intent from the query
+        entities: Formatted string of entities
+        prior_work_summary: Optional summary of previous work completed
+        guidance: Optional guidance from reflection/analysis
+
+    Returns:
+        str: The formatted user prompt for planning
+    """
+    prompt = f"""User query: "{query}"
 
 Understanding:
-{understanding.intent}
-{prior_work_section}
-{guidance_section}
+- Intent: {intent}
+- Entities: {entities}"""
 
-Create a plan to answer this query.
-"""
+    if prior_work_summary:
+        prompt += f"""
+
+Previous work completed:
+{prior_work_summary}
+
+Note: Build on prior work - don't repeat tasks already done."""
+
+    if guidance:
+        prompt += f"""
+
+Guidance from analysis:
+{guidance}"""
+
+    prompt += f"""
+
+Create a goal-oriented task list to {"continue answering" if prior_work_summary else "answer"} this query."""
+
+    return prompt
 
 
 # ======================================================================
@@ -223,9 +293,11 @@ TOOL_SELECTION_SYSTEM_PROMPT = """Select and call tools to complete the task. Us
 
 """
 
+
 def get_tool_selection_system_prompt(tool_descriptions: str) -> str:
     """Return system prompt of tool selection during execution."""
     return TOOL_SELECTION_SYSTEM_PROMPT.format(tools=tool_descriptions)
+
 
 def build_tool_selection_prompt(
     task_description: str,
@@ -235,7 +307,7 @@ def build_tool_selection_prompt(
     return f"""Task: {task_description}
 
 
-Period: {', '.join(period) or 'N/A'}
+Period: {", ".join(period) or "N/A"}
 """
 
 
@@ -313,10 +385,27 @@ Your task:
 - If complete, provide clear reasoning for why it's sufficient
 - If incomplete, provide specific guidance on what additional information is needed
 
-Output format:
+Return a JSON object with this exact structure:
 - isComplete: true if sufficient information has been gathered, false otherwise
-- reason: Clear explanation of your assessment
-- guidance: If incomplete, specific guidance on what to do next (optional)
+- reasoning: Clear explanation of your assessment
+- missingInfo: Array of strings describing what information is missing (empty array if complete)
+- suggestedNextSteps: Specific guidance on what to do next (empty string if complete)
+
+Example when incomplete:
+{{
+  "isComplete": false,
+  "reasoning": "The tool call failed and no greeting was generated",
+  "missingInfo": ["Greeting output from hello skill"],
+  "suggestedNextSteps": "Check if the hello skill requires specific parameters or try alternative greeting methods"
+}}
+
+Example when complete:
+{{
+  "isComplete": true,
+  "reasoning": "Successfully retrieved greeting from hello skill",
+  "missingInfo": [],
+  "suggestedNextSteps": ""
+}}
 
 Guidelines:
 - Be thorough in your evaluation
@@ -333,58 +422,34 @@ def get_reflect_system_prompt() -> str:
 
 def build_reflect_user_prompt(
     query: str,
-    understanding: object,
-    completedPlans: list,
-    taskResults: dict,
+    intent: str,
+    completed_work: str,
     iteration: int,
+    max_iterations: int,
 ) -> str:
-    """Build user prompt for reflect phase."""
-    # Format current plan with task statuses
-    current_plan = completedPlans[-1] if completedPlans else None
-    plan_summary = []
-    if current_plan:
-        for task in current_plan.tasks:
-            status_symbol = "✓" if task.status.value == "completed" else "✗"
-            plan_summary.append(
-                f"{status_symbol} {task.description} [{task.id}] - {task.status.value}"
-            )
-    plan_str = "\n".join(plan_summary) if plan_summary else "No tasks in current plan"
+    """Build user prompt for reflect phase.
 
-    # Format task results
-    results_summary = []
-    for task_id, result in taskResults.items():
-        results_summary.append(f"Task {task_id}:\n{result.output}")
-    results_str = "\n\n".join(results_summary) if results_summary else "No task results yet"
+    Args:
+        query: The original user query
+        intent: The understood intent from the query
+        completed_work: Formatted string of all completed work
+        iteration: Current iteration number
+        max_iterations: Maximum number of iterations allowed
 
-    # Format all completed plans
-    all_plans_summary = []
-    for idx, completed_plan in enumerate(completedPlans, start=1):
-        pass_summary = [f"Pass {idx}:"]
-        for task in completed_plan.tasks:
-            status_symbol = "✓" if task.status.value == "completed" else "✗"
-            pass_summary.append(f"  {status_symbol} {task.description} [{task.id}]")
-        all_plans_summary.append("\n".join(pass_summary))
-    all_plans_str = "\n\n".join(all_plans_summary) if all_plans_summary else "No completed plans"
+    Returns:
+        str: The formatted user prompt for reflection
+    """
+    return f"""Original query: "{query}"
 
-    return f"""Original Query:
-{query}
+User intent: {intent}
 
-Understanding:
-{understanding.intent}
+Iteration: {iteration} of {max_iterations}
 
-Iteration: {iteration}
+Work completed so far:
+{completed_work}
 
-Current Plan:
-{plan_str}
-
-Task Results:
-{results_str}
-
-All Planning Iterations:
-{all_plans_str}
-
-Evaluate whether the gathered information is sufficient to answer the query.
-"""
+Evaluate: Do we have enough information to fully answer this query?
+If not, what specific information is still missing?"""
 
 
 # ======================================================================

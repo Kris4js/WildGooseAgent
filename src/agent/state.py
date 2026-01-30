@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
@@ -35,19 +36,12 @@ class TaskType(Enum):
 
 
 class EntityType(Enum):
-    PERSON = "person"
-    ORGANIZATION = "organization"
-    LOCATION = "location"
-    DATE = "date"
-    TIME = "time"
-    MONEY = "money"
-    PERCENT = "percent"
-    EVENT = "event"
-    WORK_OF_ART = "work_of_art"
-    LAW = "law"
-    LANGUAGE = "language"
+    ACTION = "action"
+    SKILL_NAME = "skill_name"
+    TOOL_NAME = "tool_name"
 
 
+@dataclass
 class Entity:
     type: EntityType
     value: str
@@ -58,21 +52,25 @@ class Entity:
 # ======================================================================
 
 
+@dataclass
 class UnderstandInput:
     query: str
-    conversation_history: Optional[Any]  # TODO Build a history middleware
+    conversation_history: Optional[Any] = None  # TODO Build a history middleware
 
 
+@dataclass
 class Understanding:
     intent: str
-    entities: list[Entity]
+    entities: list[Entity] = field(default_factory=list)
 
 
+@dataclass
 class ToolCall:
     tool: str
-    args: dict[str, Any]
+    args: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
 class ToolCallStatus(ToolCall):
     """工具调用状态对象
 
@@ -92,7 +90,7 @@ class ToolCallStatus(ToolCall):
         ```
     """
 
-    status: TaskStatus
+    status: TaskStatus = TaskStatus.PENDING
 
 
 # ======================================================================
@@ -100,26 +98,29 @@ class ToolCallStatus(ToolCall):
 # ======================================================================
 
 
+@dataclass
 class Task:
     id: str
     description: str
     status: TaskStatus
-    taskType: Optional[TaskType]
-    toolCalls: Optional[list[ToolCallStatus]]
-    dependsOn: Optional[list[str]]
+    taskType: Optional[TaskType] = None
+    toolCalls: Optional[list[ToolCallStatus]] = None
+    dependsOn: Optional[list[str]] = None
 
 
+@dataclass
 class Plan:
     summary: str
-    tasks: list[Task]
+    tasks: list[Task] = field(default_factory=list)
 
 
+@dataclass
 class PlanInput:
     query: str
     understanding: Understanding
-    priorPlans: Optional[list[Plan]]
-    priorResults: Optional[dict[str, TaskResult]]
-    guidanceFromReflection: Optional[str]
+    priorPlans: Optional[list[Plan]] = None
+    priorResults: Optional[dict[str, TaskResult]] = None
+    guidanceFromReflection: Optional[str] = None
 
 
 # ======================================================================
@@ -127,16 +128,18 @@ class PlanInput:
 # ======================================================================
 
 
+@dataclass
 class TaskResult:
     taskId: str
-    output: Optional[str]
+    output: Optional[str] = None
 
 
+@dataclass
 class ExecuteInput:
     query: str
     task: Task
     plan: Plan
-    contextData: str
+    contextData: str = ""
 
 
 # ======================================================================
@@ -144,10 +147,11 @@ class ExecuteInput:
 # ======================================================================
 
 
+@dataclass
 class ToolSummary:
     id: str
     toolName: str
-    args: dict[str, Any]
+    args: dict[str, Any] = field(default_factory=dict)
 
 
 # ======================================================================
@@ -155,13 +159,14 @@ class ToolSummary:
 # ======================================================================
 
 
+@dataclass
 class AgentState:
     query: str
     currentPhase: Phase
-    understanding: Optional[Understanding]
-    plan: Optional[Plan]
-    taskResults: dict[str, TaskResult]
-    currentTaskId: Optional[str]
+    understanding: Optional[Understanding] = None
+    plan: Optional[Plan] = None
+    taskResults: dict[str, TaskResult] = field(default_factory=dict)
+    currentTaskId: Optional[str] = None
 
 
 def create_initial_state(query: str) -> AgentState:
@@ -177,6 +182,7 @@ def create_initial_state(query: str) -> AgentState:
 # ======================================================================
 
 
+@dataclass
 class ReflectInput:
     query: str
     understanding: Understanding
@@ -185,11 +191,12 @@ class ReflectInput:
     iteration: int
 
 
+@dataclass
 class ReflectionResult:
     isComplete: bool
     reasoning: str
-    missingInfo: list[str]
-    suggestedNextSteps: str
+    missingInfo: list[str] = field(default_factory=list)
+    suggestedNextSteps: str = ""
 
 
 # ======================================================================
@@ -197,7 +204,8 @@ class ReflectionResult:
 # ======================================================================
 
 
+@dataclass
 class AnswerInput:
     query: str
     completedPlans: list[Plan]
-    taskResults: dict[str, TaskResult]
+    taskResults: dict[str, TaskResult] = field(default_factory=dict)

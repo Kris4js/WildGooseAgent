@@ -198,9 +198,10 @@ class ToolExecutor:
             if cancellation_token and cancellation_token.is_set():
                 raise asyncio.CancelledError("Tool execution cancelled.")
 
-            callbacks.on_tool_call_update(
-                task.id, index, TaskStatus.IN_PROGRESS
-            )
+            if callbacks:
+                callbacks.on_tool_call_update(
+                    task.id, index, TaskStatus.IN_PROGRESS
+                )
 
             try:
                 tool = self.tool_map.get(tool_call.tool)
@@ -229,16 +230,17 @@ class ToolExecutor:
                 output = result if isinstance(result, str) else str(result)
                 tool_call.status = TaskStatus.COMPLETED
                 tool_call.output = output
-                callbacks.on_tool_call_update(
-                    task.id, index, TaskStatus.COMPLETED, output=output
-                )
+                if callbacks:
+                    callbacks.on_tool_call_update(
+                        task.id, index, TaskStatus.COMPLETED, output=output
+                    )
 
-                callbacks.on_tool_call_update(
-                    task.id,
-                    index,
-                    "succeeded",
-                    output=f"Result saved at {context_path}",
-                )
+                    callbacks.on_tool_call_update(
+                        task.id,
+                        index,
+                        "succeeded",
+                        output=f"Result saved at {context_path}",
+                    )
 
             except asyncio.CancelledError:
                 # !!! AbortError: 用户取消操作, 立即中止所有操作
@@ -249,9 +251,10 @@ class ToolExecutor:
                 error_msg = str(e)
                 tool_call.status = TaskStatus.FAILED
                 tool_call.error = error_msg
-                callbacks.on_tool_call_update(
-                    task.id, index, TaskStatus.FAILED, error=error_msg
-                )
+                if callbacks:
+                    callbacks.on_tool_call_update(
+                        task.id, index, TaskStatus.FAILED, error=error_msg
+                    )
 
         # fmt: off
         tasks = [
@@ -283,7 +286,10 @@ class ToolExecutor:
         Returns:
             list[ToolCallStatus]: _description_
         """
-        periods = understanding.entities.get("periods", [])
+        # Extract period entities from the list (entities is a list, not a dict)
+        periods = []
+        # Note: This is a placeholder - the actual implementation would depend on
+        # how periods are represented in the entities list
 
         prompt = build_tool_selection_prompt(
             task_description=task.description,

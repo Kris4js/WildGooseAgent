@@ -11,7 +11,6 @@ MessageHistory 将消息历史完全记录在内存中，在应用程序重新�
 import hashlib
 import json
 
-from loguru import logger
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
@@ -20,6 +19,9 @@ from ..agent.prompts import (
     MESSAGE_SUMMARY_SYSTEM_PROMPT,
     MESSAGE_SELECTION_SYSTEM_PROMPT,
 )
+from .logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # 代表一个对话回合（查询 + 回答 + 摘要）

@@ -1,34 +1,47 @@
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
+from typing import Optional
+from pydantic import BaseModel, Field
 
-from src.agent.state import PlanInput, Task, Plan, TaskType, TaskStatus
+from src.agent.state import PlanInput, Task, Plan, TaskType, TaskStatus, TaskResult
 from src.agent.prompts import (
     get_plan_system_prompt,
     build_plan_user_prompt,
 )
-from src.model.llm import llm_call
-from src.utils.logger import logger
+from src.model.llm import llm_call_with_structured_output
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+# ============================================================================
+# Plan Schema
+# ============================================================================
 
 
 class TaskSchema(BaseModel):
-    """Schema for a task as returned by the LLM."""
+    """Schema for a single task in the plan."""
 
-    description: str
-    taskType: str  # "use_tools" or "reason"
-    dependsOn: List[str] = []  # List of task IDs this task depends on
-
-    class Config:
-        frozen = True
+    id: str = Field(..., description="Unique identifier for the task")
+    description: str = Field(..., description="Description of what this task should accomplish")
+    taskType: str = Field(..., description="Type of task: 'use_tools' or 'reason'")
+    dependsOn: list[str] = Field(default_factory=list, description="List of task IDs this task depends on")
 
 
-class PlanResponse(BaseModel):
-    """Schema for the plan response from the LLM."""
+class PlanSchema(BaseModel):
+    """Schema for the plan output from the LLM."""
 
-    summary: str
-    tasks: List[TaskSchema]
+    summary: str = Field(..., description="Summary of the plan")
+    tasks: list[TaskSchema] = Field(..., description="List of tasks to execute")
 
-    class Config:
-        frozen = True
+
+class PlanPhaseOptions(BaseModel):
+    """Options for the plan phase."""
+
+    model: str
+
+
+# ============================================================================
+# Plan Phase
+# ============================================================================
 
 
 class PlanPhase:
@@ -40,9 +53,9 @@ class PlanPhase:
 
     def __init__(
         self,
-        model: str = "google/gemini-2.5-pro-preview-09-2025",
+        options: PlanPhaseOptions,
     ):
-        self.model = model
+        self.model = options.model
 
     async def run(
         self,
@@ -59,87 +72,85 @@ class PlanPhase:
         """
         logger.info("Plan phase: Starting planning iteration")
 
+        # Format entities string
+        entities_str = (
+            ", ".join([f"{e.type}: {e.value}" for e in input.understanding.entities])
+            if len(input.understanding.entities) > 0
+            else "None identified"
+        )
+
+        # Format prior work summary if available
+        prior_work_summary = (
+            self._format_prior_work(input.priorPlans, input.priorResults)
+            if input.priorPlans and len(input.priorPlans) > 0
+            else None
+        )
+
         system_prompt = get_plan_system_prompt()
         user_prompt = build_plan_user_prompt(
             query=input.query,
-            understanding=input.understanding,
-            guidanceFromReflection=input.guidanceFromReflection,
-            format_prior_work=self._format_prior_work(input.priorPlans),
+            intent=input.understanding.intent,
+            entities=entities_str,
+            prior_work_summary=prior_work_summary,
+            guidance=input.guidanceFromReflection,
         )
 
-        # Call LLM with schema for structured output
-        response = await llm_call(
-            model=self.model,
+        # Call LLM with structured output
+        response = await llm_call_with_structured_output(
             prompt=user_prompt,
             system_prompt=system_prompt,
-            response_format=PlanResponse,
+            model=self.model,
+            output_schema=PlanSchema,
         )
 
-        # Parse the response into PlanResponse
-        if isinstance(response, PlanResponse):
-            plan_response = response
-        elif hasattr(response, "parsed"):
-            plan_response = response.parsed
-        else:
-            # Fallback: parse manually
-            logger.warning(f"Unexpected response type: {type(response)}")
-            plan_response = PlanResponse(summary="Failed to generate plan", tasks=[])
+        # Generate unique task IDs that don't conflict with prior plans
+        iteration = len(input.priorPlans) + 1 if input.priorPlans else 1
+        id_prefix = f"iter{iteration}_"
 
-        # Convert TaskSchema to Task objects
-        tasks: List[Task] = []
-
-        for idx, task_schema in enumerate(plan_response.tasks):
-            # Map string to TaskType enum
-            task_type = (
-                TaskType.USE_TOOLS
-                if task_schema.taskType == "use_tools"
-                else TaskType.REASON
+        # Map to Task type with taskType and dependencies
+        tasks: list[Task] = []
+        for t in response.tasks:
+            task = Task(
+                id=id_prefix + t.id,
+                description=t.description,
+                status=TaskStatus.PENDING,
+                taskType=TaskType(t.taskType),
+                dependsOn=[id_prefix + dep for dep in t.dependsOn],
+                toolCalls=None,
             )
-
-            task = Task()
-            task.id = f"task_{idx}"
-            task.description = task_schema.description
-            task.status = TaskStatus.PENDING
-            task.taskType = task_type
-            task.dependsOn = task_schema.dependsOn if task_schema.dependsOn else None
-            task.toolCalls = None
             tasks.append(task)
 
-        plan = Plan()
-        plan.summary = plan_response.summary
-        plan.tasks = tasks
-
-        logger.info(
-            f"Plan phase: Created plan with {len(tasks)} tasks: {plan.summary}"
+        # Create and return the plan
+        return Plan(
+            summary=response.summary,
+            tasks=tasks,
         )
 
-        return plan
-
-    def _format_prior_work(self, prior_plans: Optional[List[Plan]]) -> str:
-        """Format prior planning iterations into a summary string.
+    def _format_prior_work(
+        self,
+        plans: Optional[list[Plan]],
+        task_results: Optional[dict[str, TaskResult]] = None,
+    ) -> str:
+        """Format prior work from completed plans for context.
 
         Args:
-            prior_plans: List of previously completed plans
+            plans: List of previously completed plans
+            task_results: Optional map of task IDs to their results
 
         Returns:
             str: Formatted summary of prior work
         """
-        if not prior_plans:
+        if not plans:
             return ""
 
-        summary_parts = []
+        parts: list[str] = []
 
-        for idx, plan in enumerate(prior_plans, start=1):
-            pass_num = idx
-            task_summaries = []
+        for i, plan in enumerate(plans):
+            parts.append(f"Pass {i + 1}: {plan.summary}")
 
             for task in plan.tasks:
-                status_symbol = "✓" if task.status == TaskStatus.COMPLETED else "✗"
-                task_summaries.append(
-                    f"{status_symbol} {task.description} [{task.id}]"
-                )
+                result = task_results.get(task.id) if task_results else None
+                status = "✓" if result else "✗"
+                parts.append(f"  {status} {task.description}")
 
-            tasks_str = "\n    ".join(task_summaries)
-            summary_parts.append(f"Pass {pass_num}:\n    {tasks_str}")
-
-        return "\n\n".join(summary_parts)
+        return "\n".join(parts)

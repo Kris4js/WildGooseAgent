@@ -1,11 +1,13 @@
 import asyncio
 from typing import Dict, List, Optional, Protocol
 
-from src.agent.state import Task, Plan, TaskResult, TaskStatus, Understanding
+from src.agent.state import Task, Plan, TaskResult, TaskStatus, TaskType, Understanding
 from src.agent.tool_executor import ToolExecutor, ToolExecutorCallbacks
 from src.agent.phases.execute import ExecutePhase
 from src.utils.context import ToolContextManager
-from src.utils.logger import logger
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # ======================================================================
@@ -138,6 +140,7 @@ class TaskExecutor:
                     understanding=understanding,
                     query_id=query_id,
                     task_results=task_results,
+                    plan=plan,
                     task_executor_callbacks=task_executor_callbacks,
                     tool_executor_callbacks=tool_executor_callbacks,
                     cancellation_token=cancellation_token,
@@ -203,7 +206,7 @@ class TaskExecutor:
 
             # Check if all dependencies are completed
             dependencies_met = all(
-                dep_id in completed_tasks for dep_id in task.dependencies
+                dep_id in completed_tasks for dep_id in task.dependsOn
             )
 
             if dependencies_met:
@@ -218,6 +221,7 @@ class TaskExecutor:
         understanding: Understanding,
         query_id: str,
         task_results: Dict[str, TaskResult],
+        plan: Plan,
         task_executor_callbacks: Optional[TaskExecutorCallbacks] = None,
         tool_executor_callbacks: Optional[ToolExecutorCallbacks] = None,
         cancellation_token: Optional[asyncio.Event] = None,
@@ -230,6 +234,7 @@ class TaskExecutor:
             understanding (Understanding): The understanding from the understand phase
             query_id (str): The query ID for context management
             task_results (Dict[str, TaskResult]): Results from previous tasks
+            plan (Plan): The plan containing this task
             task_executor_callbacks (Optional[TaskExecutorCallbacks]): Callbacks for task events
             tool_executor_callbacks (Optional[ToolExecutorCallbacks]): Callbacks for tool events
             cancellation_token (Optional[asyncio.Event]): Token for cancelling execution
@@ -237,12 +242,12 @@ class TaskExecutor:
         Returns:
             TaskResult: The result of the task execution
         """
-        logger.info(f"TaskExecutor: Executing task {task.id} ({task.type})")
+        logger.info(f"TaskExecutor: Executing task {task.id} ({task.taskType})")
 
         if task_executor_callbacks:
             task_executor_callbacks.on_task_start(task.id)
 
-        if task.type == "tool":
+        if task.taskType == TaskType.USE_TOOLS:
             # Select tools for the task
             tool_calls = await self.tool_executor.select_tools(
                 task=task,
@@ -270,7 +275,7 @@ class TaskExecutor:
 
             output = "\n\n".join(output_parts)
 
-        elif task.type == "reasoning":
+        elif task.taskType == TaskType.REASON:
             # Build context data from previous task results
             context_data = self._build_context_data(
                 task=task,
@@ -285,6 +290,7 @@ class TaskExecutor:
                 input=ExecuteInput(
                     query=query,
                     task=task,
+                    plan=plan,
                     contextData=context_data,
                 )
             )
@@ -292,7 +298,7 @@ class TaskExecutor:
             output = result.output
 
         else:
-            raise ValueError(f"Unknown task type: {task.type}")
+            raise ValueError(f"Unknown task type: {task.taskType}")
 
         return TaskResult(
             taskId=task.id,
@@ -318,14 +324,19 @@ class TaskExecutor:
         context_parts = []
 
         # Add results from dependent tasks
-        for dep_id in task.dependencies:
+        for dep_id in task.dependsOn:
             if dep_id in task_results:
                 result = task_results[dep_id]
                 context_parts.append(f"Task {dep_id}:\n{result.output}")
 
         # Add context from context manager
-        stored_context = self.context_manager.get_all_context(query_id)
-        if stored_context:
-            context_parts.append(f"\nStored Context:\n{stored_context}")
+        pointers = self.context_manager.get_pointers_for_query(query_id)
+        if pointers:
+            filepaths = [p.filepath for p in pointers]
+            contexts = self.context_manager.load_contexts(filepaths)
+            for ctx in contexts:
+                context_parts.append(
+                    f"Tool: {ctx.tool_name}\nArgs: {ctx.args}\nResult: {ctx.result}"
+                )
 
         return "\n\n".join(context_parts)

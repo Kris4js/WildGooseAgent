@@ -2,7 +2,7 @@ import json
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from langchain_core.tools import tool, StructuredTool
+from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
 
 from src.tools.types import format_tool_result
@@ -34,23 +34,3 @@ async def tavily_search(query: str) -> str:
 
     return format_tool_result(data=parsed, source_urls=urls)
 
-# async def tavily_search_func(query: str) -> str:
-#     """Search the web for current information on any topic."""
-#     result = await tavily_client.ainvoke(query)
-
-#     parsed = json.loads(result) if isinstance(result, str) else result
-#     urls = [
-#         r.get("url") if isinstance(r, dict) and r.get("url") else ""
-#         for r in parsed.get("results", [])
-#     ]
-
-#     return format_tool_result(data=parsed, source_urls=urls)
-
-
-# tavily_search = StructuredTool.from_function(
-#     func=tavily_search_func,
-#     coroutine=tavily_search_func,
-#     name="tavily_search",
-#     description="Search the web for current information on any topic. Returns relevant search results with URLs and content snippets",
-#     args_schema=TavilySearchInput,
-# )

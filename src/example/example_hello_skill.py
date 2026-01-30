@@ -8,7 +8,7 @@ Run individual examples or use main() to run all.
 import asyncio
 import os
 
-from src.agent.state import Task, TaskStatus, TaskType, ToolCallStatus, Understanding
+from src.agent.state import Task, TaskStatus, TaskType, ToolCallStatus
 from src.agent.tool_executor import ToolExecutor, ToolExecutorCallbacks, ToolExecutorOptions
 from src.skills import discover_skills, get_skill, build_skill_metadata_section
 from src.tools.registry import get_tool_registry, build_tool_descriptions
@@ -134,10 +134,10 @@ def example_5_build_tool_descriptions():
 def example_6_invoke_skill_tool():
     """Example 6: Invoke skill tool directly (sync)."""
     logger.info("=" * 60)
-    logger.info("Example 6: Invoking skill tool with hello-skill")
+    logger.info("Example 6: Invoking skill tool with golden-seed")
     logger.info("=" * 60)
 
-    result = skill_tool.invoke({"skill": "hello-skill"})
+    result = skill_tool.invoke({"skill": "golden-seed"})
     logger.info("Result:")
     logger.info("-" * 40)
     logger.info(f"{result}")
@@ -151,7 +151,7 @@ async def example_7_skill_with_args():
     logger.info("Example 7: Invoking skill tool with arguments")
     logger.info("=" * 60)
 
-    result = await skill_tool.ainvoke({"skill": "hello-skill", "args": "Kris4js"})
+    result = await skill_tool.ainvoke({"skill": "golden-seed"})
     logger.info("Result with args:")
     logger.info("-" * 40)
     logger.info(f"{result}")
@@ -202,13 +202,13 @@ async def example_9_tool_executor_basic():
     # Create a simple task
     task = Task(
         id="example-task-1",
-        description="Test hello skill",
+        description="Test golden-seed skill",
         status=TaskStatus.PENDING,
         taskType=TaskType.USE_TOOLS,
         toolCalls=[
             ToolCallStatus(
                 tool="skill_tool",
-                args={"skill": "hello-skill"},
+                args={"skill": "golden-seed"},
                 status=TaskStatus.PENDING,
             )
         ],
@@ -390,4 +390,5 @@ if __name__ == "__main__":
             )
     else:
         # Run all examples
-        asyncio.run(run_all_examples())
+        # asyncio.run(run_all_examples())
+        asyncio.run(example_9_tool_executor_basic())

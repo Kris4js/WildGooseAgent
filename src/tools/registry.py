@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from src.skills import discover_skills
 from src.tools.search import tavily_search
 from src.tools.skill import skill_tool, SKILL_TOOL_DESCRIPTION
-from src.tools.description import WEB_SEARCH_DESCRIPTION
+from src.tools.description import WEB_SEARCH_DESCRIPTION, BROWSER_AUTOMATION_DESCRIPTION
 
 
 class RegisteredTool(BaseModel):
@@ -56,6 +56,23 @@ def get_tool_registry(model: str) -> list[RegisteredTool]:
                 description=WEB_SEARCH_DESCRIPTION,
             )
         )
+
+    # Include browser automation tools (always available if Playwright is installed)
+    try:
+        from src.tools.browser import get_browser_tools
+
+        browser_tools = get_browser_tools()
+        for browser_tool in browser_tools:
+            tools.append(
+                RegisteredTool(
+                    name=browser_tool.name,
+                    tool=browser_tool,
+                    description=BROWSER_AUTOMATION_DESCRIPTION,
+                )
+            )
+    except ImportError:
+        # Playwright not installed, skip browser tools
+        pass
 
     # Include skill tool if any skills are available
     available_skills = discover_skills()

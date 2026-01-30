@@ -14,17 +14,17 @@ class ExecutePhaseOptions(BaseModel):
 
 
 class ExecutePhase(Phase):
-    """Execute phase for reasoning tasks.
+    """Execute phase for "reason" tasks using the LLM.
 
-    This phase handles tasks that require reasoning/analysis over gathered data.
-    Tool-based tasks are handled separately by the ToolExecutor.
+    Called only for tasks that require analysis, comparison, or synthesis.
+    Data has already been gathered and is passed in as contextData.
     """
 
     def __init__(
         self,
-        model: str = "google/gemini-2.5-pro-preview-09-2025",
+        options: ExecutePhaseOptions,
     ):
-        self.model = model
+        self.model: str = options.model
 
     @override
     async def run(self, input: ExecuteInput) -> TaskResult:
@@ -44,9 +44,9 @@ class ExecutePhase(Phase):
         )
 
         response = await llm_call(
-            model=self.model,
             prompt=user_prompt,
             system_prompt=system_prompt,
+            model=self.model,
         )
 
         # Normalize response to string

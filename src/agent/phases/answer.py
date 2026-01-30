@@ -9,13 +9,18 @@ from src.agent.prompts import (
 )
 from src.model.llm import llm_stream_call
 from src.agent.phases.base import Phase
-from src.utils.logger import logger
+from src.utils.logger import get_logger
 from src.utils.context import ToolContextManager
+
+logger = get_logger(__name__)
 
 
 class AnswerPhaseOptions(BaseModel):
     model: str
     context_manager: ToolContextManager
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class AnswerPhase(Phase):
@@ -89,4 +94,5 @@ class AnswerPhase(Phase):
         ):
             yield chunk
 
+        print()
         logger.info("Answer phase: Final response generated")

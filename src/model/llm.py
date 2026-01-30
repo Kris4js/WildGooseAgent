@@ -70,10 +70,11 @@ async def llm_call(
     # 4. 调用 LLM
     response: AIMessage = await llm.ainvoke(messages)
 
-    # 5. 返回完整消息（如果需要提取 tool_calls）或仅内容
+    # 5. 返回带工具调用的完整响应
     if tools is not None:
         return response
-    return response.content
+    
+    return response
 
 
 async def llm_call_with_structured_output(
@@ -139,8 +140,11 @@ async def llm_stream_call(
     messages.append(HumanMessage(content=prompt))
 
     # 3. 调用 LLM 流式响应
-    async for chunk in await llm.astream(messages):
-        yield chunk.content
+    async for chunk in llm.astream(messages):
+        # Extract content from the chunk
+        if hasattr(chunk, 'content') and chunk.content:
+            yield chunk.content
+        # Skip empty chunks (metadata only)
 
 
 async def llm_stream_call_with_structured_output(
