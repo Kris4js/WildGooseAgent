@@ -1,0 +1,96 @@
+.inline-tool-call {
+  display: inline-block;
+  margin: 4px 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  overflow: hidden;
+}
+
+.inline-tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.2s;
+}
+
+.inline-tool-call-header:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.inline-tool-name {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Courier New", monospace;
+  color: #0066cc;
+  letter-spacing: 0.5px;
+}
+
+.inline-tool-toggle {
+  font-size: 8px;
+  color: #666;
+}
+
+.inline-tool-details {
+  padding: 8px 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.inline-tool-section {
+  margin: 6px 0;
+}
+
+.inline-tool-section:first-child {
+  margin-top: 0;
+}
+
+.inline-tool-section:last-child {
+  margin-bottom: 0;
+}
+
+.inline-tool-section strong {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 4px;
+  color: #555;
+}
+
+.inline-tool-section pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Courier New", monospace;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.inline-tool-error {
+  color: #d32f2f;
+}
+
+.inline-tool-error strong {
+  color: #d32f2f;
+}
+
+.inline-tool-error pre {
+  background: #ffebee;
+  border-color: #ffcdd2;
+}
+
+.inline-tool-duration {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #777;
+  text-align: right;
+}

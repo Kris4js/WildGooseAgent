@@ -300,7 +300,9 @@ class Scratchpad:
                 # Format: "tool_name(args): summary"
                 args_str = ""
                 if e.args:
-                    args_str = ", ".join(f"{k}={v}" for k, v in list(e.args.items())[:2])
+                    args_str = ", ".join(
+                        f"{k}={v}" for k, v in list(e.args.items())[:2]
+                    )
                 tool_desc = f"{e.tool_name}({args_str})" if args_str else e.tool_name
                 summaries.append(f"{tool_desc}: {e.llm_summary}")
         return summaries

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from typing import Optional
@@ -11,10 +12,37 @@ from langchain_core.messages import (
 )
 
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
 
 
 DEFAULT_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025"
+
+
+def _clean_env_value(value: Optional[str]) -> str:
+    """Normalize env value by trimming whitespace and surrounding quotes."""
+    if not value:
+        return ""
+    return value.strip().strip('"').strip("'")
+
+
+def _coerce_chunk_content_to_text(content) -> str:
+    """Normalize streaming chunk content from provider-specific shapes to plain text."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        return "".join(parts)
+    return ""
 
 
 def _get_chat_llm(
@@ -22,8 +50,8 @@ def _get_chat_llm(
     base_url: str = "https://openrouter.ai/api/v1",
 ) -> ChatOpenAI:
     """初始化并配置 LangChain ChatOpenAI 实例"""
-    base_url = os.getenv("OPENAI_BASE_URL", base_url)
-    api_key = os.getenv("OPENAI_API_KEY", "")
+    base_url = _clean_env_value(os.getenv("OPENAI_BASE_URL", base_url))
+    api_key = _clean_env_value(os.getenv("OPENAI_API_KEY", ""))
 
     if not api_key:
         raise ValueError("OPENAI_API_KEY environment variable is not set.")
@@ -138,11 +166,24 @@ async def llm_stream_call(
     messages.append(HumanMessage(content=prompt))
 
     # 3. 调用 LLM 流式响应
+    # Some providers emit cumulative chunks instead of deltas.
+    # We normalize to plain text and emit only incremental delta.
+    accumulated = ""
     async for chunk in llm.astream(messages):
-        # Extract content from the chunk
-        if hasattr(chunk, "content") and chunk.content:
-            yield chunk.content
-        # Skip empty chunks (metadata only)
+        raw_content = getattr(chunk, "content", None)
+        text = _coerce_chunk_content_to_text(raw_content)
+        if not text:
+            continue
+
+        if text.startswith(accumulated):
+            delta = text[len(accumulated) :]
+            if delta:
+                accumulated = text
+                yield delta
+            continue
+
+        accumulated += text
+        yield text
 
 
 async def llm_stream_call_with_structured_output(

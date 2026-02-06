@@ -147,7 +147,10 @@ class ToolContextManager:
                 # Only proceed if parsed result is a dict (JSON object)
                 if isinstance(parsed, dict):
                     if parsed.get("source_urls") is not None:
+                        source_urls = parsed.get("source_urls")
+                    elif parsed.get("sourceUrls") is not None:
                         source_urls = parsed.get("sourceUrls")
+                    if parsed.get("data") is not None:
                         actual_result = parsed["data"]
 
             except (json.JSONDecodeError, ValueError):

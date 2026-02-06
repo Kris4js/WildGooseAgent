@@ -128,7 +128,7 @@ class SessionsSpawnInput(BaseModel):
     )
 
 
-# ============== File Tools ==============
+# --- File Tools ---
 
 
 @tool(

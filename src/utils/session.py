@@ -322,11 +322,13 @@ class SessionManager:
 
     async def clear(self, session_key: str) -> None:
         """
-        Clear session.
+        Clear session by deleting the session file.
         Clears both memory cache and disk file.
         """
+        # Remove from cache
         self._cache.pop(session_key, None)
 
+        # Delete the session file
         file_path = self._get_path(session_key)
         try:
             file_path.unlink()

@@ -1,0 +1,60 @@
+.thinking-bubble {
+  display: flex;
+  justify-content: flex-start;
+  margin: 12px 0;
+}
+
+.thinking-block {
+  display: inline-block;
+  max-width: 70%;
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 16px;
+  border-bottom-left-radius: 4px;
+  overflow: hidden;
+}
+
+.thinking-block--loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.thinking-header:hover {
+  background: #f0f0f0;
+}
+
+.thinking-icon {
+  font-size: 14px;
+}
+
+.thinking-label {
+  flex: 1;
+  color: #666;
+  font-size: 13px;
+}
+
+.thinking-toggle {
+  color: #999;
+  font-size: 10px;
+}
+
+.thinking-content {
+  padding: 0 14px 10px;
+  font-size: 13px;
+  color: #555;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}

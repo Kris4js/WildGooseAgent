@@ -1,100 +1,218 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This document is the engineering guide for agents working in this repository.
 
-## Project Overview
+## 1. Project Snapshot
 
-Wild Goose Agent is an AI agent system with a PySide6 desktop UI. The agent uses LangChain/LangGraph for LLM orchestration and supports tools, skills, and long-term memory.
+Wild Goose Agent is a desktop AI assistant stack:
 
-## Commands
+- Backend: FastAPI (`src/router`) + Agent core (`src/agent`)
+- Frontend: React + TypeScript (`app/src`) wrapped by Tauri (`app/src-tauri`)
+- Runtime pattern: SSE streaming events from backend to frontend
+- Persistence: JSONL sessions, JSON tool context, file-based long-term memory
 
-### Environment Setup
+The project is currently in a “single-agent core” phase with strong focus on:
+
+- predictable agent loop behavior
+- tool execution visibility
+- session switching correctness
+- streaming UI continuity
+
+## 2. Dev Commands
+
+## Environment setup
+
 ```bash
-# Install dependencies (uses uv package manager)
 uv sync
-
-# Install Playwright browsers (for browser automation tools)
+cd app && bun install
 playwright install
 ```
 
-### Development
+## Run development
+
 ```bash
-# Run the desktop UI application
-python -m app.main
+# full stack
+./scripts/dev.sh
 
-# Run basic agent example
-python examples/basic_use.py
+# backend only
+uv run -m src.router
 
-# Lint code
-ruff check
-
-# Format code
-ruff format
-
-# Run tests
-pytest
-pytest tests/unit/test_file.py::test_function  # Single test
+# frontend only (Tauri)
+cd app && bun run tauri dev
 ```
 
-## Architecture
+## Quality checks
 
-### Core Agent System (`src/agent/`)
+```bash
+ruff check src tests
+.venv/bin/python -m pytest -q
+cd app && bun run build
+```
 
-The agent uses an async generator pattern that yields events for real-time UI updates:
+## Live integration test (network/model required)
 
-- **Agent** (`agent.py`): Main agent loop. Calls LLM iteratively, executes tools, and yields `AgentEvent` objects. Handles context compaction when over token budget.
-- **Scratchpad** (`scratchpad.py`): Single source of truth for a query's execution. Tracks tool calls, thinking, enforces soft limits (warnings, not blocks) on tool usage.
-- **Types** (`types.py`): Event types (`ThinkingEvent`, `ToolStartEvent`, `ToolEndEvent`, `DoneEvent`, etc.) and `AgentConfig`.
+```bash
+RUN_LIVE_TESTS=1 .venv/bin/python -m pytest -q tests/integration/test_session_disconnect.py
+```
 
-### Tool System (`src/tools/`)
+## 3. Environment Variables
 
-- **Registry** (`registry.py`): Returns `RegisteredTool` objects containing tool instances + rich descriptions for system prompt injection. Conditionally includes tools based on environment (e.g., Tavily API key for `web_search`).
-- **Built-in tools** (`buildin.py`): File operations (read, write, edit, list, grep, exec).
-- **Skill tool** (`skill.py`): Dynamically loads and executes user-defined skills.
-- **Browser tools** (`browser/`): Playwright-based browser automation.
+Configured in project root `.env`.
 
-### Skill System (`src/skills/`)
+- `OPENAI_API_KEY` (required)
+- `OPENAI_BASE_URL` (optional, set OpenRouter endpoint when using OpenRouter)
+- `TAVILY_API_KEY` (optional, enables `web_search`)
 
-Skills are markdown files with frontmatter metadata. Discovered from three locations (later overrides earlier):
-1. Builtin: `src/skills/`
-2. User: `~/.dexter/skills/`
-3. Project: `.dexter/skills/`
+Important:
 
-Each skill is a directory containing `SKILL.md` with YAML frontmatter (name, description).
+- `src/model/llm.py` loads `.env` from project root with `override=True`.
+- This is intentional to avoid stale process-level env values shadowing updated keys.
 
-### Utilities (`src/utils/`)
+## 4. Backend Architecture
 
-- **SessionManager** (`session.py`): Conversation persistence using JSONL format (append-only, fault-tolerant). Sanitizes session keys to prevent path traversal.
-- **ToolContextManager** (`context.py`): Persists tool results to disk as JSON, stores lightweight pointers in memory. Enables large tool outputs without context bloat.
-- **MemoryManager** (`memory.py`): Long-term memory using file-based keyword search + time decay scoring. Stores Q&A pairs with tags for retrieval.
+## Entry & API routing
 
-### Desktop UI (`app/`)
+- App entry: `src/router/__init__.py` (`app = FastAPI(...)`)
+- Run module: `src/router/__main__.py`
+- API groups:
+  - `src/router/chat.py`
+  - `src/router/sessions.py`
+  - `src/router/tools.py`
+  - `src/router/skills.py`
 
-PySide6 application with Cherry Studio-style theming:
+## Chat streaming contract
 
-- **AgentBridge** (`bridge/agent_bridge.py`): Qt signals/slots wrapper around async Agent. Runs agent queries in QThread, emits signals for each event type.
-- **Pages**: Chat (message bubbles with streaming), Resources (Tools/Skills/Prompts sub-tabs), Settings dialog.
-- **Components**: Reusable `ListPanel` (searchable list), `PreviewPanel` (markdown detail view), `MessageBubble`, `MarkdownViewer`.
-- **Themes**: QSS files in `themes/` (light/dark).
+Endpoint: `POST /api/chat`
 
-### Prompts (`src/agent/prompts.py`)
+The response is SSE (`text/event-stream`), with `data:` JSON events.
 
-Customization layer. Modify `SYSTEM_PROMPT` to change agent personality. Build functions for iteration, final answer, tool summary.
+Event types:
 
-## Data Flow
+- `thinking`
+- `tool_start`
+- `tool_end`
+- `tool_error`
+- `tool_limit`
+- `answer_start`
+- `answer_chunk`
+- `done`
 
-1. Query → Agent creates Scratchpad
-2. Load session history (SessionManager) + search memory (MemoryManager)
-3. LLM call → if tool calls: execute via tool_map
-4. Tool results persisted to disk (ToolContextManager), summarized via LLM
-5. Scratchpad records tool calls with summaries
-6. Repeat until no more tool calls or max_iterations
-7. Generate final answer with optionally-selected full contexts
-8. Save messages to session, save Q&A to memory
+Keep this contract stable unless frontend hook is updated together.
 
-## Key Patterns
+## Agent core
 
-- **Event streaming**: Agent yields events; UI subscribes via AgentBridge signals
-- **Disk persistence**: JSONL for sessions (append-only), JSON for tool contexts
-- **Graceful degradation**: Tool limits warn but don't block; missing tools are skipped
-- **Skill override**: Project > User > Builtin precedence for skill discovery
+File: `src/agent/agent.py`
+
+Main responsibilities:
+
+- session normalization (`resolve_session_key`)
+- load prior messages + memory context
+- iterative model/tool loop
+- tool execution events
+- streamed answer generation
+- finalize persistence to session and memory
+- interruption handling on disconnect
+
+Dependencies:
+
+- `Scratchpad` (`src/agent/scratchpad.py`) as per-query truth source
+- `SessionManager` (`src/utils/session.py`)
+- `ToolContextManager` (`src/utils/context.py`)
+- `MemoryManager` (`src/utils/memory.py`)
+
+## LLM adapter
+
+File: `src/model/llm.py`
+
+- `llm_call()` for non-stream / tool calls
+- `llm_stream_call()` for stream
+- stream chunk normalization handles provider-specific chunk shapes
+
+When changing this file, validate:
+
+1. OpenRouter/OpenAI compatibility
+2. chunk delta correctness
+3. no regression in `answer_chunk` frequency
+
+## 5. Frontend Architecture
+
+## Top-level app
+
+- `app/src/App.tsx`: tabs between Chat and Resources
+
+## Chat flow
+
+- `app/src/pages/Chat.tsx`: page composition
+- `app/src/hooks/useChat.ts`: state machine + SSE parsing
+
+`useChat` key behavior:
+
+- maintains per-session UI state (messages/loading/thinking/toolcalls)
+- keeps in-flight streams mapped by session key
+- restores stream state when switching back to an active session
+
+## Message rendering
+
+- `app/src/components/MessageBubble.tsx`
+- Markdown rendered with `react-markdown` + `remark-gfm`
+- table style in `app/src/components/MessageBubble.css`
+
+## Session UI
+
+- `app/src/components/SessionList.tsx`
+- supports create/delete/rename, synced with backend session APIs
+
+## Resources page
+
+- `app/src/pages/Resources.tsx` and `app/src/pages/resources/*`
+- displays grouped tools and skills details from backend
+
+## 6. Persistence Model
+
+## Sessions
+
+- files: `.mini-agent/sessions/*.jsonl`
+- metadata: `.mini-agent/session_metadata/*.json`
+- each message line follows `Message` schema in `src/utils/session.py`
+
+## Tool context
+
+- files: `.mini-agent/context/*.json`
+- written by `ToolContextManager` for detailed tool outputs
+
+## Memory
+
+- files under `.mini-agent/memory`
+- queried before each run for context augmentation
+
+## 7. Testing Layout
+
+Structured under `tests/`:
+
+- `tests/unit/`: deterministic, no network
+- `tests/integration/`: may require live API/network (`@pytest.mark.integration`)
+
+Rules:
+
+- avoid ad-hoc test scripts in repo root
+- keep integration tests opt-in via env flags
+- ensure `pytest` default run is stable locally and CI-friendly
+
+## 8. Known Engineering Constraints
+
+- Browser tools depend on Playwright runtime availability.
+- Tool calls are associated into assistant history as content blocks; session API reconstructs `tool_calls` for frontend.
+- Session switching and streaming are tightly coupled; changes in one side often require updating both `useChat.ts` and `src/router/sessions.py` parsing behavior.
+
+## 9. Change Checklist
+
+Before merging substantial changes:
+
+1. `ruff check src tests`
+2. `.venv/bin/python -m pytest -q`
+3. `cd app && bun run build`
+4. manual smoke test:
+   - send message
+   - switch session while streaming
+   - switch back
+   - verify bubble/tool progress continuity

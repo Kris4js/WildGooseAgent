@@ -6,6 +6,14 @@ Supports multiple concurrent sessions with isolated browser contexts.
 """
 
 import asyncio
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Optional
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+from src.utils.logger import get_logger
 
 # Global session manager singleton
 _session_manager = None
@@ -19,16 +27,6 @@ def get_session_manager() -> "BrowserSessionManager":
             options=BrowserOptions(headless=True, timeout=30000)
         )
     return _session_manager
-
-
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Optional
-from uuid import uuid4
-
-from pydantic import BaseModel, Field
-
-from src.utils.logger import get_logger
 
 # Get logger with proper name binding
 logger = get_logger(__name__)

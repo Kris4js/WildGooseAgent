@@ -1,0 +1,225 @@
+.session-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 280px;
+  min-width: 280px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+}
+
+.session-list-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.session-list-header h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.new-session-btn {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.2s;
+}
+
+.new-session-btn:hover {
+  background: var(--primary-hover);
+}
+
+.session-list-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+}
+
+.session-list-loading,
+.session-list-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.session-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  margin: 0.25rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+  position: relative;
+}
+
+.session-item:hover {
+  background: var(--hover-bg);
+}
+
+.session-item.active {
+  background: var(--active-bg);
+  border-left: 3px solid var(--primary-color);
+  padding-left: calc(1rem - 3px);
+}
+
+.session-name {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.session-actions-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.session-actions-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.session-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.session-modal {
+  width: 360px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+}
+
+.session-modal-header {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.session-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.session-modal-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.session-modal-input {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  outline: none;
+}
+
+.session-modal-input:focus {
+  border-color: var(--primary-color);
+}
+
+.session-modal-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.session-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  justify-content: flex-end;
+}
+
+.session-modal-btn {
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.session-modal-btn:hover {
+  border-color: var(--primary-color);
+}
+
+.session-modal-btn.danger {
+  border-color: var(--danger-color);
+  color: var(--danger-color);
+}
+
+.session-modal-btn.danger:hover {
+  background: var(--danger-bg);
+}
+
+.session-modal-btn.ghost {
+  color: var(--text-secondary);
+}
+
+/* CSS Variables */
+:root {
+  --bg-secondary: #f8f9fa;
+  --border-color: #e5e7eb;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --hover-bg: #f3f4f6;
+  --active-bg: #e0e7ff;
+  --danger-bg: #fee2e2;
+  --danger-color: #dc2626;
+}
+
+[data-theme="dark"] {
+  --bg-secondary: #1f2937;
+  --border-color: #374151;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --hover-bg: #374151;
+  --active-bg: #1e3a8a;
+  --danger-bg: #7f1d1d;
+  --danger-color: #ef4444;
+}

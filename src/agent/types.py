@@ -100,6 +100,14 @@ class AnswerStartEvent:
 
 
 @dataclass
+class AnswerChunkEvent:
+    """Emitted when a chunk of the answer is generated (streaming)."""
+
+    type: Literal["answer_chunk"] = "answer_chunk"
+    chunk: str = ""
+
+
+@dataclass
 class DoneEvent:
     """Emitted when the agent has completed its work."""
 
@@ -117,5 +125,6 @@ AgentEvent = (
     | ToolErrorEvent
     | ToolLimitEvent
     | AnswerStartEvent
+    | AnswerChunkEvent
     | DoneEvent
 )

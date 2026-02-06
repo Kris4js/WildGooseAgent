@@ -1,0 +1,153 @@
+.message-bubble {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 0;
+}
+
+.message-bubble--user {
+  align-items: flex-end;
+}
+
+.message-bubble--assistant {
+  align-items: flex-start;
+}
+
+.message-content {
+  display: inline-block;
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.5;
+  word-break: break-word;
+  font-size: 14px;
+}
+
+/* Markdown styling for assistant messages */
+.message-bubble--assistant .message-content p {
+  margin: 0.5em 0;
+}
+
+.message-bubble--assistant .message-content p:first-child {
+  margin-top: 0;
+}
+
+.message-bubble--assistant .message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-bubble--assistant .message-content strong {
+  font-weight: 600;
+}
+
+.message-bubble--assistant .message-content em {
+  font-style: italic;
+}
+
+.message-bubble--assistant .message-content code {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Courier New", monospace;
+  font-size: 0.9em;
+}
+
+.message-bubble--assistant .message-content pre {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.message-bubble--assistant .message-content pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.message-bubble--assistant .message-content ul,
+.message-bubble--assistant .message-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.message-bubble--assistant .message-content li {
+  margin: 0.25em 0;
+}
+
+.message-bubble--assistant .message-content blockquote {
+  border-left: 3px solid rgba(0, 0, 0, 0.2);
+  margin: 0.5em 0;
+  padding-left: 1em;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.message-bubble--assistant .message-content h1,
+.message-bubble--assistant .message-content h2,
+.message-bubble--assistant .message-content h3,
+.message-bubble--assistant .message-content h4,
+.message-bubble--assistant .message-content h5,
+.message-bubble--assistant .message-content h6 {
+  margin: 0.75em 0 0.5em 0;
+  font-weight: 600;
+}
+
+.message-bubble--assistant .message-content h1:first-child,
+.message-bubble--assistant .message-content h2:first-child,
+.message-bubble--assistant .message-content h3:first-child {
+  margin-top: 0;
+}
+
+.message-bubble--assistant .message-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+}
+
+.message-bubble--assistant .message-content th,
+.message-bubble--assistant .message-content td {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.message-bubble--assistant .message-content th {
+  background: rgba(0, 0, 0, 0.06);
+  font-weight: 600;
+}
+
+.message-bubble--user .message-content {
+  background: #007aff;
+  color: white;
+  border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
+}
+
+.message-bubble--assistant .message-content {
+  background: #f0f0f0;
+  color: #333;
+  border-bottom-left-radius: 4px;
+}
+
+.streaming-indicator {
+  color: #888;
+  font-style: italic;
+}
+
+.message-timestamp {
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
+.message-tool-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}

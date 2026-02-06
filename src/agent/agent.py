@@ -14,16 +14,18 @@ Customize behavior by modifying prompts.py - this file stays unchanged.
 """
 
 import json
+import asyncio
 import time
 from typing import AsyncGenerator, Any, Optional
 
 from langchain_core.messages import AIMessage
 
-from src.model.llm import llm_call
+from src.model.llm import llm_call, llm_stream_call
 from src.tools.registry import get_tools
 
 from src.agent.scratchpad import Scratchpad, ToolContextWithSummary
 from src.agent.types import (
+    ToolCallRecord,
     AgentConfig,
     AgentEvent,
     ThinkingEvent,
@@ -32,6 +34,7 @@ from src.agent.types import (
     ToolErrorEvent,
     ToolLimitEvent,
     AnswerStartEvent,
+    AnswerChunkEvent,
     DoneEvent,
 )
 from src.agent.prompts import (
@@ -45,7 +48,7 @@ from src.agent.prompts import (
 
 # Utility integrations
 from src.utils.logger import get_logger
-from src.utils.session import SessionManager, Message, resolve_session_key
+from src.utils.session import SessionManager, Message, ContentBlock, resolve_session_key
 from src.utils.context import ToolContextManager
 from src.utils.memory import MemoryManager
 
@@ -123,6 +126,7 @@ class Agent:
         cls,
         config: Optional[AgentConfig] = None,
         base_dir: str = ".mini-agent",
+        session_manager: Optional[SessionManager] = None,
     ) -> "Agent":
         """
         Create a new Agent instance with tools and utilities.
@@ -130,12 +134,15 @@ class Agent:
         Args:
             config: Agent configuration (model, max_iterations, etc.)
             base_dir: Base directory for persistence (.mini-agent by default)
+            session_manager: Optional shared SessionManager instance.
+                             If not provided, creates a new one.
         """
         config = config or AgentConfig()
         tools = get_tools(config.model)
 
         # Initialize utility managers
-        session_manager = SessionManager(base_dir=f"{base_dir}/sessions")
+        if session_manager is None:
+            session_manager = SessionManager(base_dir=f"{base_dir}/sessions")
         context_manager = ToolContextManager(
             context_dir=f"{base_dir}/context", model=config.model
         )
@@ -204,103 +211,145 @@ class Agent:
             await self._save_user_message(session_key, query)
 
         iteration = 0
+        interrupted = False
 
-        # Main agent loop
-        while iteration < self.max_iterations:
-            iteration += 1
-            log.debug(f"Iteration {iteration}/{self.max_iterations}")
+        try:
+            # Main agent loop
+            while iteration < self.max_iterations:
+                iteration += 1
+                log.debug(f"Iteration {iteration}/{self.max_iterations}")
 
-            # Call LLM
-            response = await self._call_model(current_prompt, use_tools=True)
+                # Call LLM
+                response = await self._call_model(current_prompt, use_tools=True)
 
-            # Handle non-AIMessage response
-            if isinstance(response, str):
-                log.debug("Received string response from LLM")
-                yield AnswerStartEvent()
-                await self._finalize_run(session_key, query, response, scratchpad)
-                yield DoneEvent(
-                    answer=response,
-                    tool_calls=scratchpad.get_tool_call_records(),
-                    iterations=iteration,
-                )
-                return
-
-            response_text = extract_text_content(response)
-
-            # Emit thinking if there are also tool calls
-            if response_text and has_tool_calls(response):
-                scratchpad.add_thinking(response_text)
-                yield ThinkingEvent(message=response_text)
-
-            # No tool calls = ready to answer
-            if not has_tool_calls(response):
-                # Direct response (greetings, simple questions)
-                if not scratchpad.has_tool_results() and response_text:
-                    log.debug("Direct response (no tool results)")
+                # Handle non-AIMessage response
+                if isinstance(response, str):
+                    log.debug("Received string response from LLM")
                     yield AnswerStartEvent()
-                    await self._finalize_run(
-                        session_key, query, response_text, scratchpad
-                    )
+                    async for event in self._stream_text(response):
+                        yield event
+                    await self._finalize_run(session_key, query, response, scratchpad)
                     yield DoneEvent(
-                        answer=response_text,
-                        tool_calls=[],
+                        answer=response,
+                        tool_calls=scratchpad.get_tool_call_records(),
                         iterations=iteration,
                     )
                     return
 
-                # Generate final answer with full context
-                log.debug("Generating final answer with tool context")
-                full_context = await self._build_full_context(query, scratchpad)
-                final_prompt = build_final_answer_prompt(query, full_context)
+                response_text = extract_text_content(response)
 
-                yield AnswerStartEvent()
-                final_response = await self._call_model(final_prompt, use_tools=False)
-                answer = (
-                    final_response
-                    if isinstance(final_response, str)
-                    else extract_text_content(final_response)
+                # Emit thinking if there are also tool calls
+                if response_text and has_tool_calls(response):
+                    scratchpad.add_thinking(response_text)
+                    yield ThinkingEvent(message=response_text)
+
+                # No tool calls = ready to answer
+                if not has_tool_calls(response):
+                    # Direct response (greetings, simple questions)
+                    if not scratchpad.has_tool_results() and response_text:
+                        log.debug("Direct response (no tool results)")
+                        yield AnswerStartEvent()
+                        async for event in self._stream_text(response_text):
+                            yield event
+                        await self._finalize_run(
+                            session_key, query, response_text, scratchpad
+                        )
+                        yield DoneEvent(
+                            answer=response_text,
+                            tool_calls=[],
+                            iterations=iteration,
+                        )
+                        return
+
+                    # Generate final answer with full context (streaming)
+                    log.debug("Generating final answer with tool context")
+                    full_context = await self._build_full_context(query, scratchpad)
+                    final_prompt = build_final_answer_prompt(query, full_context)
+
+                    yield AnswerStartEvent()
+                    async for event in self._stream_final_answer(final_prompt):
+                        yield event
+                    answer = self._last_streamed_answer
+
+                    await self._finalize_run(session_key, query, answer, scratchpad)
+                    yield DoneEvent(
+                        answer=answer,
+                        tool_calls=scratchpad.get_tool_call_records(),
+                        iterations=iteration,
+                    )
+                    return
+
+                # Execute tools and yield events
+                async for event in self._execute_tool_calls(
+                    response, query, query_id, scratchpad
+                ):
+                    yield event
+
+                # Build iteration prompt with summaries
+                current_prompt = build_iteration_prompt(
+                    query,
+                    scratchpad.get_tool_summaries(),
+                    scratchpad.format_tool_usage_for_prompt(),
                 )
 
-                await self._finalize_run(session_key, query, answer, scratchpad)
-                yield DoneEvent(
-                    answer=answer,
-                    tool_calls=scratchpad.get_tool_call_records(),
-                    iterations=iteration,
-                )
-                return
+            # Max iterations reached - still generate answer (streaming)
+            log.warning(f"Max iterations ({self.max_iterations}) reached")
+            full_context = await self._build_full_context(query, scratchpad)
+            final_prompt = build_final_answer_prompt(query, full_context)
 
-            # Execute tools and yield events
-            async for event in self._execute_tool_calls(
-                response, query, query_id, scratchpad
-            ):
+            yield AnswerStartEvent()
+            async for event in self._stream_final_answer(final_prompt):
                 yield event
+            answer = self._last_streamed_answer
 
-            # Build iteration prompt with summaries
-            current_prompt = build_iteration_prompt(
-                query,
-                scratchpad.get_tool_summaries(),
-                scratchpad.format_tool_usage_for_prompt(),
+            await self._finalize_run(session_key, query, answer or "", scratchpad)
+            yield DoneEvent(
+                answer=answer or f"Reached maximum iterations ({self.max_iterations}).",
+                tool_calls=scratchpad.get_tool_call_records(),
+                iterations=iteration,
             )
 
-        # Max iterations reached - still generate answer
-        log.warning(f"Max iterations ({self.max_iterations}) reached")
-        full_context = await self._build_full_context(query, scratchpad)
-        final_prompt = build_final_answer_prompt(query, full_context)
+        except GeneratorExit:
+            # Client disconnected (e.g., switched sessions)
+            log.warning("Client disconnected during agent run")
+            interrupted = True
+            raise
+        except asyncio.CancelledError:
+            # ASGI commonly cancels streaming tasks with CancelledError on disconnect
+            log.warning("Agent run cancelled due to client disconnect")
+            interrupted = True
+            raise
 
-        yield AnswerStartEvent()
-        final_response = await self._call_model(final_prompt, use_tools=False)
-        answer = (
-            final_response
-            if isinstance(final_response, str)
-            else extract_text_content(final_response)
-        )
-
-        await self._finalize_run(session_key, query, answer or "", scratchpad)
-        yield DoneEvent(
-            answer=answer or f"Reached maximum iterations ({self.max_iterations}).",
-            tool_calls=scratchpad.get_tool_call_records(),
-            iterations=iteration,
-        )
+        finally:
+            if interrupted and session_key:
+                partial_streamed = (getattr(self, "_last_streamed_answer", "") or "").strip()
+                if partial_streamed:
+                    log.info("Saving partial streamed answer after client disconnect")
+                    await self._save_assistant_message(
+                        session_key,
+                        f"[执行被中断，以下为已生成内容]\n\n{partial_streamed}",
+                    )
+                elif scratchpad.has_tool_results():
+                    log.info("Saving partial tool summary after client disconnect")
+                    # Build a summary of what was done before interruption
+                    tool_summaries = scratchpad.get_tool_summaries()
+                    partial_answer = (
+                        f"[执行被中断，已完成 {len(tool_summaries)} 个工具调用]\n\n"
+                        f"已执行的工具：\n"
+                    )
+                    for i, summary in enumerate(tool_summaries, 1):
+                        partial_answer += f"{i}. {summary[:200]}\n"
+                    await self._save_assistant_message(
+                        session_key,
+                        partial_answer,
+                        scratchpad.get_tool_call_records(),
+                    )
+                else:
+                    log.info("Saving interruption marker after client disconnect")
+                    await self._save_assistant_message(
+                        session_key,
+                        "[执行被中断，未生成可展示的回复内容]",
+                    )
 
     async def _call_model(
         self,
@@ -315,6 +364,46 @@ class Agent:
             model=self.model,
             tools=self.tools if use_tools else None,
         )
+
+    async def _stream_final_answer(
+        self,
+        prompt: str,
+        chunk_size: int = 24,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Stream the final answer and yield AnswerChunkEvent for each chunk."""
+        log.debug(f"Streaming final answer, prompt_len={len(prompt)}")
+        self._last_streamed_answer = ""
+        async for chunk in llm_stream_call(
+            prompt=prompt,
+            system_prompt=self.system_prompt,
+            model=self.model,
+        ):
+            if not chunk:
+                continue
+            # Re-chunk provider output to avoid "single huge chunk" rendering.
+            for i in range(0, len(chunk), chunk_size):
+                piece = chunk[i : i + chunk_size]
+                self._last_streamed_answer += piece
+                yield AnswerChunkEvent(chunk=piece)
+                await asyncio.sleep(0)
+
+    async def _stream_text(
+        self,
+        text: str,
+        chunk_size: int = 24,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Stream an already-built answer as chunks for UI consistency."""
+        if not text:
+            self._last_streamed_answer = ""
+            return
+
+        self._last_streamed_answer = ""
+        for i in range(0, len(text), chunk_size):
+            chunk = text[i : i + chunk_size]
+            self._last_streamed_answer += chunk
+            yield AnswerChunkEvent(chunk=chunk)
+            # Let the event loop flush SSE chunks.
+            await asyncio.sleep(0)
 
     # ========================================================================
     # Session & Memory Methods
@@ -336,11 +425,40 @@ class Agent:
         await self.session_manager.append(session_key, message)
         log.debug(f"Saved user message to session={session_key}")
 
-    async def _save_assistant_message(self, session_key: str, answer: str) -> None:
+    async def _save_assistant_message(
+        self,
+        session_key: str,
+        answer: str,
+        tool_calls: Optional[list[ToolCallRecord]] = None,
+    ) -> None:
         """Save assistant message to session."""
+        content: str | list[ContentBlock] = answer
+        if tool_calls:
+            blocks: list[ContentBlock] = []
+            if answer:
+                blocks.append(ContentBlock(type="text", text=answer))
+            for i, tc in enumerate(tool_calls, 1):
+                tool_use_id = f"tool_{i}_{int(time.time() * 1000)}"
+                blocks.append(
+                    ContentBlock(
+                        type="tool_use",
+                        id=tool_use_id,
+                        name=tc.tool,
+                        input=tc.args or {},
+                    )
+                )
+                blocks.append(
+                    ContentBlock(
+                        type="tool_result",
+                        tool_use_id=tool_use_id,
+                        content=tc.result or "",
+                    )
+                )
+            content = blocks
+
         message = Message(
             role="assistant",
-            content=answer,
+            content=content,
             timestamp=int(time.time() * 1000),
         )
         await self.session_manager.append(session_key, message)
@@ -386,7 +504,9 @@ class Agent:
     ) -> None:
         """Finalize the run: save session and memory."""
         if session_key:
-            await self._save_assistant_message(session_key, answer)
+            await self._save_assistant_message(
+                session_key, answer, scratchpad.get_tool_call_records()
+            )
 
         # Save to long-term memory (only meaningful responses)
         if scratchpad.has_tool_results():
